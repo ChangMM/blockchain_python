@@ -36,6 +36,41 @@ class BlockChain:
         })
         return self.last_block['index'] + 1
 
+    def resolve_conflicts(self): #共识算法
+        neighbors = self.nodes
+        current_chain = self.chain
+        current_length = len(self.chain)
+        for node in neighbors:
+            response = request(f'http://{node}/chain')
+            if response.status_code == 200:
+                let jsonData = response.json()
+                length = jsonData["length"]
+                new_chain = jsonData["chain"]
+
+                if length > current_length and self.valid_chain(new_chain):
+                    current_length = length
+                    current_chain = new_chain
+                    return True
+                else:
+                    return False
+
+
+    def valid_chain(self, chain):
+        last_block = chain[0]
+        current_index = 1
+        while current_index < len(chain):
+            block = chain[current_index]
+            if block["previous_hash"] != self.hash(last_block):
+                return False
+
+            if not self.valid_proof(last_block["proof"], block["proof"]):
+                return False
+
+            last_block = block
+            current_index += 1
+
+        return True
+
     @property
     def last_block(self):
         return self.chain[-1]
@@ -102,7 +137,18 @@ def full_chain():
 @app.route("/node/register", methods=["POST"])
 def register_node():
     values = request.get_json()
-    node = values.get("nodes")
+    if values is None:
+        return "Missing params", 400
+    nodes = values.get("nodes")
+    if nodes is None:
+        return "Missing params", 400
+    for node in nodes:
+        blockchain.register_node(node)
+    response = {
+        "message": "new node has been added",
+        "total_nodes": len(blockchain.chain)
+    }
+    return jsonify(response), 201
 
 if __name__ == "__main__":
     app.run(host="0.0.0.0", port=5000)
